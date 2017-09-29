@@ -100,7 +100,7 @@ void handleGET(int fd, Request *request){
 
     // continuously read from file
     char file_buf[1024];
-    fread(buffer, strlen(c)+1, 1, fp);
+    int nbytes;
     while(nbytes = fread(file_buf, sizeof(file_buf),1,fp) > 0){
         send(fd,file_buf,strlen(file_buf),0);
     }
@@ -212,7 +212,7 @@ void getMimeType(char *http_uri, char *mimeType) {
 
 
 // -------------------------------------- ERROR FUNCTION --------------------------------------------------
-int sendError(int fd, int error_id, Request *request){
+int sendError(int fd, int error_code, Request *request) {
 
     // initialize buffers and get date
     char ebuf[1024];
@@ -221,24 +221,25 @@ int sendError(int fd, int error_id, Request *request){
     handleDate(date);
 
     // get the message based on the id
-    if (error_code == 400)
-        sprintf(output,"Bad Request. \n");
-    else if (error_code == 404)
-        sprintf(output,"Not Found. \n");
-    else if (error_code == 500)
-        sprintf(output,"Internal Server Error. \n");
-    else if (error_code == 501)
-        sprintf(output,"Not Implemented. \n");
-    else if (error_code == 505)
-        sprintf(output,"HTTP Version Not Supported. \n");
-    else
-        sprintf(output,"Unknown Error.\n");
+    if (error_code == 400) {
+        sprintf(output, "Bad Request. \n");
+    } else if (error_code == 404) {
+        sprintf(output, "Not Found. \n");
+    } else if (error_code == 500) {
+        sprintf(output, "Internal Server Error. \n");
+    } else if (error_code == 501) {
+        sprintf(output, "Not Implemented. \n");
+    } else if (error_code == 505) {
+        sprintf(output, "HTTP Version Not Supported. \n");
+    } else {
+        sprintf(output, "Unknown Error.\n");
+    }
 
 //    if(is_closed)
 //        sprintf(output,"Connection is closed.\n");
 
     // build buffer and send to client
-    sprintf(ebuf, "%s %d %s\r\n", request->http_version, error_id, output);
+    sprintf(ebuf, "%s %d %s\r\n", request->http_version, error_code, output);
     sprintf(ebuf, "%sServer: Liso/1.0\r\n", ebuf);
     sprintf(ebuf, "%sDate: %s\r\n", ebuf, date);
     sprintf(ebuf, "%sContent-Length: %ld\r\n", ebuf, strlen(output));
@@ -276,6 +277,10 @@ int main(int argc, char **argv)
     char* portnum = argv[0];
     log_filename = argv[1];
     data_path = argv[2];
+
+    fprintf(stdout, log_filename);
+    fprintf(stdout, "\n");
+    fprintf(stdout, data_path);
 
     fd_set master;    // master file descriptor list
     fd_set read_fds;  // temp file descriptor list for select()

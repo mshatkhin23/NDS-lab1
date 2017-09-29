@@ -44,34 +44,6 @@ int close_socket(int sock)
     return 0;
 }
 
-// -------------------------------------- PARSE HTTP --------------------------------------------------
-
-
-//Request * parseHTTP(char buf[], int readRet, int fd_in){
-//
-//    int index;
-//
-//    //Parse the buffer to the parse function. You will need to pass the socket fd and the buffer would need to
-//    //be read from that fd
-//    Request *request = parse(buf,readRet,fd_in);
-//    //Just printing everything
-//    printf("Http Method %s\n",request->http_method);
-//    printf("Http Version %s\n",request->http_version);
-//    printf("Http Uri %s\n",request->http_uri);
-//    for(index = 0;index < request->header_count;index++){
-//        printf("Header name %s Header Value %s\n",request->headers[index].header_name,request->headers[index].header_value);
-//    }
-//    free(request->headers);
-//    free(request);
-//    fprintf(stdout, "%s \n", buf);
-//    return request;
-//}
-
-// -------------------------------------- READ BODY (FOR POST) ----------------------------------------
-//void readBody(char buf[]){
-//
-//}
-
 
 // -------------------------------------- POST --------------------------------------------------
 void handlePOST(int fd){
@@ -92,7 +64,7 @@ void handlePOST(int fd){
 }
 
 // -------------------------------------- GET --------------------------------------------------
-void handleGETbody(int fd, Request *request){
+void handleGET(int fd, Request *request){
     // check if file exists --> fopen()
          //check if its a file (not a directory) --> stat.S_IFMT
          //check readable permissions --> stat.S_IRUSR
@@ -102,6 +74,16 @@ void handleGETbody(int fd, Request *request){
          //initialize buf = char buf[1024]
          //while (nbytes = fread(buf) > 0))
          //send(fd, buf, sizeof(buf), 0)
+
+    // append uri to path
+    char full_path[255];
+    char * default_path = "/index.html";
+    if (!strcasecmp(request->http_uri,"/")){
+        sprintf(full_path, "%s%s", data_path, default_path);
+    } else {
+        sprintf(full_path, "%s%s", data_path, request->http_uri);
+    }
+
 
     // check if file exists
     FILE * fp;
@@ -172,15 +154,9 @@ void handleHEAD(int fd, Request *request){
     fprintf(stdout, response_buff);
     send(fd, response_buff, strlen(response_buff), 0);
     fprintf(stdout, "Sent HEAD to Client!\n");
-//    free(fileDetails);
 
 }
 
-// -------------------------------------- FORMAT RESPONSE HEADERS --------------------------------------------------
-//int handleHeaders(Request request){
-//    sendResponse();
-//
-//}
 
 // -------------------------------------- Get the Date --------------------------------------------------
 void handleDate(char *date){
@@ -294,8 +270,6 @@ int main(int argc, char **argv)
     // if last character of www is '/' then add index.html
 
     // get command-line arguments
-
-
 //    log_filename = "log.txt";
     writeLog(log_filename, "Test Test");
 
@@ -330,7 +304,7 @@ int main(int argc, char **argv)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    if ((rv = getaddrinfo(NULL, PORT, &hints, &ai)) != 0) {
+    if ((rv = getaddrinfo(NULL, portnum, &hints, &ai)) != 0) {
         fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
         exit(1);
     }

@@ -24,12 +24,27 @@
 #include <netdb.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/io.h>
+#include <fcntl.h>
+
 
 #define PORT "9999"
 #define BUF_SIZE 4096
 
 char * log_filename;
 char data_path[1024];
+
+// ------------------------------------Function Definitions --------------------------------------------------
+int close_socket(int sock);
+void handleDate(char *date);
+void handlePOST(int fd);
+void handleGET(int fd, Request *request);
+void handleHEAD(int fd, Request *request);
+void writeLog(char *file_name, char *message);
+void getMimeType(char *http_uri, char *mimeType);
+int sendError(int fd, int error_code, Request *request);
+void *get_in_addr(struct sockaddr *sa);
 
 // -------------------------------------- CLOSE SOCKET --------------------------------------------------
 
@@ -83,27 +98,49 @@ void handleGET(int fd, Request *request){
     } else {
         sprintf(full_path, "%s%s", data_path, request->http_uri);
     }
+    fprintf(stdout, "Fetching File From...");
+    fprintf(stdout, full_path);
+    fprintf(stdout, "\n");
 
 
     // check if file exists
-    FILE * fp;
-    fp = fopen(request->http_uri, "r");
-    if (!fp){
+    int fp;
+    fp = open(full_path, O_RDONLY);
+//    fp = fopen(full_path, "r");
+    if (fp < 0){
         sendError(fd, 404, request);
         return;
     }
+    fprintf(stdout, "File Exists!\n");
 
     //  check readable permissions
+    fprintf(stdout, "File Permissions are Appropriate!\n");
 
     // send headers
+    fprintf(stdout, "Sending Headers...\n");
     handleHEAD(fd, request);
 
     // continuously read from file
-    char file_buf[1024];
-    int nbytes;
-    while(nbytes = fread(file_buf, sizeof(file_buf),1,fp) > 0){
-        send(fd,file_buf,strlen(file_buf),0);
-    }
+    fprintf(stdout, "Sending Body...\n");
+
+    struct stat fileDetails;
+    stat(full_path, &fileDetails);
+    int filesize;
+    filesize = fileDetails.st_size;
+    char *ptr;
+    ptr = mmap(0, filesize, PROT_READ, MAP_PRIVATE, fp, 0);
+    close(fp);
+    send(fd, ptr, filesize, 0);
+    munmap(ptr, filesize);
+
+//    char file_buf[1024];
+//    int nbytes;
+//    while(nbytes = read(fp, file_buf, strlen(file_buf)) > 0){
+//        send(fd,file_buf,strlen(file_buf),0);
+//    }
+//    fprintf(stdout, "Sent GET Response to client\n");
+//    fclose(fp);
+
 
 }
 
@@ -117,42 +154,48 @@ void handleHEAD(int fd, Request *request){
     //initialize buffer
     char response_buff[8192];
 
-
     //determine content type
     char content_type[1024];
     getMimeType(request->http_uri, content_type);
 
+    // append uri to path
+    char full_path[255];
+    char * default_path = "/index.html";
+    if (!strcasecmp(request->http_uri,"/")){
+        sprintf(full_path, "%s%s", data_path, default_path);
+    } else {
+        sprintf(full_path, "%s%s", data_path, request->http_uri);
+    }
+    fprintf(stdout, "Fetching File From...");
+    fprintf(stdout, full_path);
+    fprintf(stdout, "\n");
+
     // Get file information
     int content_length;
     struct stat fileDetails;
-//    fileDetails = malloc(sizeof(struct stat));
 
-    stat(request->http_uri, &fileDetails);
+    stat(full_path, &fileDetails);
 //    char *filename = "index.html";
 //    stat(filename, &fileDetails);
     content_length = fileDetails.st_size;
 
     // last modified
-//    time_t lastmod_time;
-//    lastmod_time = &fileDetails.st_mtime;
-//    time ( &lastmod_time );
-//
-//    struct tm *lastmod_time2;
-//    lastmod_time2 = localtime ( &lastmod_time );
-    char lastModified[500];
-    struct tm *temp;
-    temp = gmtime(&fileDetails.st_mtime);
-    strftime(lastModified, 64, "%a, %d %b %Y %H:%M:%S %Z", &temp);
+    char lastModified[128];
+    strftime(lastModified, 64, "%a, %d %b %Y %H:%M:%S %Z", localtime(&(fileDetails.st_mtime)));
 
     //format output
     sprintf(response_buff, "HTTP/1.1 200 OK\r\n");
     sprintf(response_buff, "%sDate: %s\r\n",response_buff, date);
     sprintf(response_buff, "%sServer: Liso/1.0\r\n", response_buff);
     sprintf(response_buff, "%sLast-Modified: %s\r\n", response_buff, lastModified);
-    sprintf(response_buff, "%sContent-Length: %ld\r\n", response_buff, content_length);
+    sprintf(response_buff, "%sContent-Length: %d\r\n", response_buff, content_length);
     sprintf(response_buff, "%sContent-Type: %s\r\n\r\n", response_buff, content_type);
+
+    fprintf(stdout, "Response...\n");
     fprintf(stdout, response_buff);
+
     send(fd, response_buff, strlen(response_buff), 0);
+
     fprintf(stdout, "Sent HEAD to Client!\n");
 
 }
@@ -272,15 +315,12 @@ int main(int argc, char **argv)
 
     // get command-line arguments
 //    log_filename = "log.txt";
-    writeLog(log_filename, "Test Test");
+//    writeLog(log_filename, "Test Test");
 
-    char* portnum = argv[0];
-    log_filename = argv[1];
-    data_path = argv[2];
+    char* portnum = argv[1];
+    log_filename = argv[2];
+    sprintf(data_path, "%s",argv[3]);
 
-    fprintf(stdout, log_filename);
-    fprintf(stdout, "\n");
-    fprintf(stdout, data_path);
 
     fd_set master;    // master file descriptor list
     fd_set read_fds;  // temp file descriptor list for select()
@@ -345,6 +385,8 @@ int main(int argc, char **argv)
         exit(3);
     }
 
+    fprintf(stdout, "----------Server Started---------\n");
+
     // add the listener to the master set
     FD_SET(listener, &master);
 
@@ -398,9 +440,10 @@ int main(int argc, char **argv)
                     } else {
 
                         // PARSE HTTP
-                        fprintf(stdout, "About to Parse\n");
+                        fprintf(stdout, "INCOMING REQUEST...\n");
                         fprintf(stdout,buf);
                         Request *request = parse(buf,nbytes,i);
+                        fprintf(stdout, "PARSED REQUEST...\n");
                         printf("Http Method %s\n",request->http_method);
                         printf("Http Version %s\n",request->http_version);
                         printf("Http Uri %s\n",request->http_uri);
@@ -408,7 +451,7 @@ int main(int argc, char **argv)
                         for(index = 0;index < request->header_count;index++){
                             printf("Header name %s Header Value %s\n",request->headers[index].header_name,request->headers[index].header_value);
                         }
-                        fprintf(stdout, "Finished Parsing\n");
+                        fprintf(stdout, "Finished Parsing...\n\n");
 
                         // FIGURE OUT WHICH METHOD TO CALL
                         int method;
@@ -419,33 +462,29 @@ int main(int argc, char **argv)
                         } else if (!strcasecmp(request->http_method,"POST")){
                             method = 3;
                         }
-                        fprintf(stdout, "Finished Matching\n");
+                        fprintf(stdout, "Finished Matching...\n\n");
 
                         // CALL METHOD
                         switch (method) {
 
-                            // GET
-//                            case 1:
-//                                handleGET(i);
-//                                break;
-//
-                                // HEAD
+                            case 1:
+                                handleGET(i, request);
+                                break;
+
                             case 2:
-                                fprintf(stdout, "Handling the HEAD\n");
+                                fprintf(stdout, "HEAD...\n\n");
                                 handleHEAD(i, request);
                                 break;
 
-                                // POST
                             case 3:
-//                                readBody(&buf);
-                                fprintf(stdout, "Handling the POST\n");
+                                fprintf(stdout, "POST...\n\n");
                                 handlePOST(i);
-//                                close_socket(i);
-//                                FD_CLR(i,&master);
                                 break;
 
                             default:
+                                sendError(i,501,request);
                                 fprintf(stdout, "Missed Match\n");
+                                break;
 
                         }
                         }

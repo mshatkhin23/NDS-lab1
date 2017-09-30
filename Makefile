@@ -16,7 +16,7 @@ FLAGS = -g -Wall
 
 default:all
 
-all: echo_server
+all: lisod
 
 lex.yy.c: lexer.l
 	flex $^
@@ -27,7 +27,7 @@ y.tab.c: parser.y
 %.o: %.c $(DEPS)
 	$(CC) $(FLAGS) -c -o $@ $< $(CFLAGS)
 
-echo_server: $(OBJ)
+lisod: $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS)
 
 clean:

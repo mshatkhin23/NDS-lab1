@@ -127,11 +127,11 @@ void handleGET(int fd, Request *request){
     stat(full_path, &fileDetails);
     int filesize;
     filesize = fileDetails.st_size;
-    char *ptr;
-    ptr = mmap(0, filesize, PROT_READ, MAP_PRIVATE, fp, 0);
+    char *address;
+    address = mmap(0, filesize, PROT_READ, MAP_PRIVATE, fp, 0);
     close(fp);
-    send(fd, ptr, filesize, 0);
-    munmap(ptr, filesize);
+    send(fd, address, filesize, 0);
+    munmap(address, filesize);
 
 //    char file_buf[1024];
 //    int nbytes;

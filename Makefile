@@ -31,4 +31,4 @@ lisod: $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS)
 
 clean:
-	rm -f *~ *.o echo_server lex.yy.c y.tab.c y.tab.h
+	rm -f *~ *.o lisod lex.yy.c y.tab.c y.tab.h

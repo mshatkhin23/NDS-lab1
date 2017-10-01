@@ -39,8 +39,8 @@ char data_path[1024];
 int close_socket(int sock);
 void handleDate(char *date);
 void handlePOST(int fd);
-void handleGET(int fd, Request *request);
-void handleHEAD(int fd, Request *request);
+int handleGET(int fd, Request *request);
+int handleHEAD(int fd, Request *request);
 void writeLog(char *file_name, char *message);
 void getMimeType(char *http_uri, char *mimeType);
 int sendError(int fd, int error_code, Request *request);
@@ -79,7 +79,7 @@ void handlePOST(int fd){
 }
 
 // -------------------------------------- GET --------------------------------------------------
-void handleGET(int fd, Request *request){
+int handleGET(int fd, Request *request){
     // check if file exists --> fopen()
          //check if its a file (not a directory) --> stat.S_IFMT
          //check readable permissions --> stat.S_IRUSR
@@ -106,10 +106,9 @@ void handleGET(int fd, Request *request){
     // check if file exists
     int fp;
     fp = open(full_path, O_RDONLY);
-//    fp = fopen(full_path, "r");
     if (fp < 0){
         sendError(fd, 404, request);
-        return;
+        return -1;
     }
     fprintf(stdout, "File Exists!\n");
 
@@ -132,6 +131,7 @@ void handleGET(int fd, Request *request){
     close(fp);
     send(fd, address, filesize, 0);
     munmap(address, filesize);
+    return 1;
 
 //    char file_buf[1024];
 //    int nbytes;
@@ -145,7 +145,7 @@ void handleGET(int fd, Request *request){
 }
 
 // -------------------------------------- HEAD --------------------------------------------------
-void handleHEAD(int fd, Request *request){
+int handleHEAD(int fd, Request *request){
 
     //get current date
     char date[1024];
@@ -170,6 +170,14 @@ void handleHEAD(int fd, Request *request){
     fprintf(stdout, full_path);
     fprintf(stdout, "\n");
 
+    // check if file exists
+    int fp;
+    fp = open(full_path, O_RDONLY);
+    if (fp < 0){
+        sendError(fd, 404, request);
+        return -1;
+    }
+
     // Get file information
     int content_length;
     struct stat fileDetails;
@@ -187,6 +195,7 @@ void handleHEAD(int fd, Request *request){
     sprintf(response_buff, "HTTP/1.1 200 OK\r\n");
     sprintf(response_buff, "%sDate: %s\r\n",response_buff, date);
     sprintf(response_buff, "%sServer: Liso/1.0\r\n", response_buff);
+    sprintf(response_buff, "%sConnection: keep-alive\r\n", response_buff);
     sprintf(response_buff, "%sLast-Modified: %s\r\n", response_buff, lastModified);
     sprintf(response_buff, "%sContent-Length: %d\r\n", response_buff, content_length);
     sprintf(response_buff, "%sContent-Type: %s\r\n\r\n", response_buff, content_type);
@@ -196,7 +205,10 @@ void handleHEAD(int fd, Request *request){
 
     send(fd, response_buff, strlen(response_buff), 0);
 
+    close(fp);
     fprintf(stdout, "Sent HEAD to Client!\n");
+    return 1;
+
 
 }
 
@@ -319,7 +331,7 @@ int main(int argc, char **argv)
 
     char* portnum = argv[1];
     log_filename = argv[2];
-    sprintf(data_path, "%s",argv[3]);
+    sprintf(data_path, "%s","www");
 
 
     fd_set master;    // master file descriptor list
@@ -453,6 +465,8 @@ int main(int argc, char **argv)
                         }
                         fprintf(stdout, "Finished Parsing...\n\n");
 
+                        // CHECK HTTP VERSION
+
                         // FIGURE OUT WHICH METHOD TO CALL
                         int method;
                         if (!strcasecmp(request->http_method,"GET")){
@@ -465,15 +479,22 @@ int main(int argc, char **argv)
                         fprintf(stdout, "Finished Matching...\n\n");
 
                         // CALL METHOD
+                        int retVal;
                         switch (method) {
 
                             case 1:
-                                handleGET(i, request);
+                                if (retVal = handleGET(i, request) < 0){
+                                    close(i);
+                                    FD_CLR(i, &master);
+                                };
                                 break;
 
                             case 2:
                                 fprintf(stdout, "HEAD...\n\n");
-                                handleHEAD(i, request);
+                                if (retVal = handleHEAD(i, request) < 0){
+                                    close(i);
+                                    FD_CLR(i, &master);
+                                };
                                 break;
 
                             case 3:

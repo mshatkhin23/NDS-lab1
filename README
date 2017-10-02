@@ -1,11 +1,10 @@
 ################################################################################
 # README                                                                       #
 #                                                                              #
-# Description: This file serves as a README and documentation for CP1 starter. #
+# Description: This file serves as a README and documentation for Lab1         #
 #                                                                              #
-# Authors: Athula Balachandran <abalacha@cs.cmu.edu>,                          #
-#          Wolf Richter <wolf@cs.cmu.edu>                                      #
-#          Eugene Bagdasaryan <ebagdasa@cs.cornell.edu>                        #
+# Authors: Max Shatkhin <ms3448@cornell.edu>,                                  #
+#          Joe Abi Sleiman <jba68@cornell.edu>                                 #
 #                                                                              #
 ################################################################################
 
@@ -18,6 +17,8 @@
         [TOC-1] Table of Contents
         [DES-2] Description of Files
         [RUN-3] How to Run
+        [FUN-4] Explanation of Functions
+        [LIM-5] Limitation of Server
 
 
 
@@ -29,10 +30,16 @@ Here is a listing of all files associated with Recitation 1 and what their'
 purpose is:
 
                     .../README                  - Current document 
-                    .../src/echo_client.c       - Simple echo network client
-                    .../src/echo_server.c       - Simple echo network server
-                    .../src/Makefile            - Contains rules for make
-                    .../src/cp1_checker.py      - Python test script for CP1
+                    .../project-1/echo_client.c       - Simple echo network client
+                    .../project-1/echo_server.c       - Simple echo network server
+                    .../project-1/Makefile            - Contains rules for make
+                    .../project-1/cp1_checker.py      - Python test script for CP1
+                    .../project-1/parse.c             - State machine for reading in; HTTP parser main
+                    .../project-1/parser.y            - yacc grammar for http parser
+                    .../project-1/lexer.l             - lex grammar for extracting tokens for http parse
+                    .../project-1/www/*               - endpoints used for testing http requests
+                    .../project-1/test.txt            - overview of testing methods for server
+
 
 
 
@@ -42,32 +49,62 @@ purpose is:
 
 Building and executing the echo code should be very simple:
 
-                    cd src
+                    cd project-1
                     make
-                    ./echo_server
-                    ./echo_client localhost 9999
+                    ./echo_server 9999 _ log.txt www
+                    ./lisod 9999 _ log.txt www
 
-This should allow you to input characters on stdin which will be sent to the
-echo server.  The echo server has a hard-coded serving port of 9999.  Any input
-characters to stdin will be flushed to the server on return, and any bytes
-received from the server will appear on stdout.
 
-In addition, a telnet client may also be used in a similar fashion for
-communicating with the server:
 
-                    cd src
-                    make
-                    ./echo_server
-                    telnet localhost 9999
 
-The test Python script takes a series of arguments and can be run as:
+[FUN-4] Explanation of Functions
+--------------------------------------------------------------------------------
+***
+int close_socket(int sock);
+Description: closes connection with a client socket
+***
+void handleDate(char *date);
+Description: gets the current date and time and formats the input character buffer
 
-                    cd src
-                    make
-                    ./echo_server
-                    ./cp1_checker 127.0.0.1 9999 1000 10 2048 500
+***
+void handlePOST(int fd);
+Description: Implements the POST functionality and sends response to client.
+             Side-effect is to append string to a file.
 
-with arguments as such:
+***
+int handleGET(int fd, Request *request);
+Description: Implements GET functionality and sends response to client
 
-                    <ip> <port> <# trials> <# writes and reads per trial> \
-                    <max # bytes to write at a time> <# connections> 
+***
+int handleHEAD(int fd, Request *request);
+Description: Implements HEAD functionality and sends response to client
+
+***
+void writeLog(char *file_name, char *message);
+Description: writes message to log file with appended timestamp
+
+***
+void getMimeType(char *http_uri, char *mimeType);
+Description: gets the mime type passed in bby the http request
+
+***
+int sendError(int fd, int error_code, Request *request);
+Description: sends error to client
+
+***
+parse(buf,readret,i);
+Description: This function implements the HTTP parser. It leverages lex and yacc grammar
+for parsing http requests.
+
+
+
+
+[LIM-5] Limitations of Server
+--------------------------------------------------------------------------------
+- Our server only implements 3 kinds of HTTP requests at the moment: GET, HEAD, POST
+- Error handling is also limited at the moment (404, 501, 505,...)
+- The server should be able to echo to up to 1024 clients, however managing HTTP requests on this number
+  of clients has not been tested.
+- Pipelined requests should, in theory, be handled properly however there has not been extensive testing on this.
+- The POST method has a very vanilla implementation currently, with no checks on the content of the body
+  that gets passed in. The current side-effect is to simply append a string to a POSTlog file.

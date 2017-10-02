@@ -68,6 +68,24 @@ void handlePOST(int fd){
     char date[1024];
     handleDate(date);
 
+    // Open file
+    FILE * fp;
+    fp = fopen("POSTlog.txt", "a");
+
+    // Print timestamp
+    char timestamp[128];
+    handleDate(timestamp);
+
+    // Put together full message
+    char *message = "post side effect";
+    char full_message[1024];
+    sprintf(full_message, "[%s]: %s\n", timestamp, message);
+
+    // print to file
+    fprintf(fp, "%s\n", full_message);
+    fclose(fp);
+
+    // Send Response to client
     sprintf(buff, "HTTP/1.1 200 OK\r\n");
     sprintf(buff, "%sServer: Liso/1.0\r\n", buff);
     sprintf(buff, "%sDate: %s\r\n", buff, date);
@@ -80,15 +98,6 @@ void handlePOST(int fd){
 
 // -------------------------------------- GET --------------------------------------------------
 int handleGET(int fd, Request *request){
-    // check if file exists --> fopen()
-         //check if its a file (not a directory) --> stat.S_IFMT
-         //check readable permissions --> stat.S_IRUSR
-         //get the file (stat(filename, fileDetails))
-         //build headers from fileDetails
-         //for body, continuously fread() or fget() (check how they represent end of file)
-         //initialize buf = char buf[1024]
-         //while (nbytes = fread(buf) > 0))
-         //send(fd, buf, sizeof(buf), 0)
 
     // append uri to path
     char full_path[255];
@@ -122,6 +131,7 @@ int handleGET(int fd, Request *request){
     // continuously read from file
     fprintf(stdout, "Sending Body...\n");
 
+    // use mmap() to get the pointer to the file address in memory --> send from there
     struct stat fileDetails;
     stat(full_path, &fileDetails);
     int filesize;
@@ -183,8 +193,6 @@ int handleHEAD(int fd, Request *request){
     struct stat fileDetails;
 
     stat(full_path, &fileDetails);
-//    char *filename = "index.html";
-//    stat(filename, &fileDetails);
     content_length = fileDetails.st_size;
 
     // last modified
@@ -230,13 +238,15 @@ void writeLog(char *file_name, char *message){
     fp = fopen(file_name, "a");
 
     // Print timestamp
-    struct tm tm;
-    time_t now;
-    now = time(0);
-    tm = *gmtime(&now);
+    char timestamp[128];
+    handleDate(timestamp);
+
+    // Put together full message
+    char full_message[1024];
+    sprintf(full_message, "[%s]: %s\n", timestamp, message);
 
     // print to file
-    fprintf(fp, "%s\n", message);
+    fprintf(fp, "%s\n", full_message);
 
     fclose(fp);
 }
@@ -290,9 +300,6 @@ int sendError(int fd, int error_code, Request *request) {
         sprintf(output, "Unknown Error.\n");
     }
 
-//    if(is_closed)
-//        sprintf(output,"Connection is closed.\n");
-
     // build buffer and send to client
     sprintf(ebuf, "%s %d %s\r\n", request->http_version, error_code, output);
     sprintf(ebuf, "%sServer: Liso/1.0\r\n", ebuf);
@@ -301,11 +308,11 @@ int sendError(int fd, int error_code, Request *request) {
     sprintf(ebuf, "%sContent-Type: text/html\r\n\r\n", ebuf);
     send(fd, ebuf, strlen(ebuf), 0);
     fprintf(stdout, "Sent ERROR to Client!\n");
+    writeLog(log_filename, "Sent ERROR Response");
 }
 
-// -------------------------------------- Get_in_addr --------------------------------------------------
+// ------------------------------------ Get_in_addr --------------------------------------------------
 
-// get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET) {
@@ -319,32 +326,25 @@ void *get_in_addr(struct sockaddr *sa)
 
 int main(int argc, char **argv)
 {
-    // portnum, logfile, www (folder name)
-    // portnum is fed directly into getaddrinfo
-    // logfile is passed to writeLog
-    // www is made to the beginning of a path variabble
-    // if last character of www is '/' then add index.html
 
-    // get command-line arguments
-//    log_filename = "log.txt";
-//    writeLog(log_filename, "Test Test");
+    // *********************** Code below relies heavily on Beej's Guide **********************
+    // ************** http://beej.us/guide/bgnet/output/html/multipage/index.html *************
 
     char* portnum = argv[1];
-    log_filename = argv[2];
+    log_filename = argv[3];
     sprintf(data_path, "%s","www");
 
-
-    fd_set master;    // master file descriptor list
-    fd_set read_fds;  // temp file descriptor list for select()
+    fd_set all_fds;    // master file descriptor list
+    fd_set temp_fds;  // temp file descriptor list for select()
     int fdmax;        // maximum file descriptor number
 
-    int listener;     // listening socket descriptor
+    int sock;     // listening socket descriptor
     int newfd;        // newly accept()ed socket descriptor
     struct sockaddr_storage remoteaddr; // client address
     socklen_t addrlen;
 
     char buf[8192];    // buffer for client data
-    int nbytes;
+    int readret;
 
     char remoteIP[INET6_ADDRSTRLEN];
 
@@ -353,8 +353,8 @@ int main(int argc, char **argv)
 
     struct addrinfo hints, *ai, *p;
 
-    FD_ZERO(&master);    // clear the master and temp sets
-    FD_ZERO(&read_fds);
+    FD_ZERO(&all_fds);    // clear the master and temp sets
+    FD_ZERO(&temp_fds);
 
     // get us a socket and bind it
     memset(&hints, 0, sizeof hints);
@@ -367,16 +367,16 @@ int main(int argc, char **argv)
     }
 
     for(p = ai; p != NULL; p = p->ai_next) {
-        listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (listener < 0) {
+        sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sock < 0) {
             continue;
         }
 
         // lose the pesky "address already in use" error message
-        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
-        if (bind(listener, p->ai_addr, p->ai_addrlen) < 0) {
-            close(listener);
+        if (bind(sock, p->ai_addr, p->ai_addrlen) < 0) {
+            close(sock);
             continue;
         }
 
@@ -392,41 +392,42 @@ int main(int argc, char **argv)
     freeaddrinfo(ai); // all done with this
 
     // listen
-    if (listen(listener, 10) == -1) {
+    if (listen(sock, 10) == -1) {
         perror("listen");
         exit(3);
     }
 
     fprintf(stdout, "----------Server Started---------\n");
+    writeLog(log_filename, "Server Started");
 
     // add the listener to the master set
-    FD_SET(listener, &master);
+    FD_SET(sock, &all_fds);
 
     // keep track of the biggest file descriptor
-    fdmax = listener; // so far, it's this one
+    fdmax = sock; // so far, it's this one
 
     // main loop
     for(;;) {
-        read_fds = master; // copy it
-        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
+        temp_fds = all_fds; // copy it
+        if (select(fdmax+1, &temp_fds, NULL, NULL, NULL) == -1) {
             perror("select");
             exit(4);
         }
 
         // run through the existing connections looking for data to read
         for(i = 0; i <= fdmax; i++) {
-            if (FD_ISSET(i, &read_fds)) { // we got one!!
-                if (i == listener) {
+            if (FD_ISSET(i, &temp_fds)) { // we got one!!
+                if (i == sock) {
                     // handle new connections
                     addrlen = sizeof remoteaddr;
-                    newfd = accept(listener,
+                    newfd = accept(sock,
                                    (struct sockaddr *)&remoteaddr,
                                    &addrlen);
 
                     if (newfd == -1) {
                         perror("accept");
                     } else {
-                        FD_SET(newfd, &master); // add to master set
+                        FD_SET(newfd, &all_fds); // add to master set
                         if (newfd > fdmax) {    // keep track of the max
                             fdmax = newfd;
                         }
@@ -436,25 +437,31 @@ int main(int argc, char **argv)
                                          get_in_addr((struct sockaddr*)&remoteaddr),
                                          remoteIP, INET6_ADDRSTRLEN),
                                newfd);
+                        writeLog(log_filename, "New Client Connection");
                     }
+
+                    // ********************* Code above relies heavily on Beej's Guide ************************
+                    // ************** http://beej.us/guide/bgnet/output/html/multipage/index.html *************
+
                 } else {
                     // handle data from a client
-                    if ((nbytes = recv(i, buf, sizeof buf, 0)) <= 0) {
+                    if ((readret = recv(i, buf, sizeof buf, 0)) <= 0) {
                         // got error or connection closed by client
-                        if (nbytes == 0) {
+                        if (readret == 0) {
                             // connection closed
                             printf("selectserver: socket %d hung up\n", i);
+                            writeLog(log_filename, "Socket hung up");
                         } else {
                             perror("recv");
                         }
                         close(i); // bye!
-                        FD_CLR(i, &master); // remove from master set
+                        FD_CLR(i, &all_fds); // remove from master set
                     } else {
 
                         // PARSE HTTP
                         fprintf(stdout, "INCOMING REQUEST...\n");
                         fprintf(stdout,buf);
-                        Request *request = parse(buf,nbytes,i);
+                        Request *request = parse(buf,readret,i);
                         fprintf(stdout, "PARSED REQUEST...\n");
                         printf("Http Method %s\n",request->http_method);
                         printf("Http Version %s\n",request->http_version);
@@ -466,6 +473,14 @@ int main(int argc, char **argv)
                         fprintf(stdout, "Finished Parsing...\n\n");
 
                         // CHECK HTTP VERSION
+                        char ver[4];
+                        strncpy( ver, request->http_version+5, 3 );
+                        fprintf(stdout, "VERSION = %s\n",ver);
+                        if (strcasecmp(ver, "1.1")){
+                            sendError(i,505,request);
+                            close(i);
+                            FD_CLR(i, &all_fds);
+                        }
 
                         // FIGURE OUT WHICH METHOD TO CALL
                         int method;
@@ -485,21 +500,24 @@ int main(int argc, char **argv)
                             case 1:
                                 if (retVal = handleGET(i, request) < 0){
                                     close(i);
-                                    FD_CLR(i, &master);
+                                    FD_CLR(i, &all_fds);
                                 };
+                                writeLog(log_filename, "Sent GET Response");
                                 break;
 
                             case 2:
                                 fprintf(stdout, "HEAD...\n\n");
                                 if (retVal = handleHEAD(i, request) < 0){
                                     close(i);
-                                    FD_CLR(i, &master);
+                                    FD_CLR(i, &all_fds);
                                 };
+                                writeLog(log_filename, "Sent HEAD Response");
                                 break;
 
                             case 3:
                                 fprintf(stdout, "POST...\n\n");
                                 handlePOST(i);
+                                writeLog(log_filename, "Sent POST Response");
                                 break;
 
                             default:

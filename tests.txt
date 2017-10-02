@@ -1,0 +1,32 @@
+################################################################################
+# Tests                                                                        #
+#                                                                              #
+# Description: This file serves as an explanation for testing methods used in  #
+               testing our HTTP lisod server for Lab 1                         #
+#                                                                              #
+# Authors: Max Shatkhin <ms3448@cornell.edu>,                                  #
+#          Joe Abi Sleiman <jba68@cornell.edu>                                 #
+#                                                                              #
+################################################################################
+
+- For checkpoint 1, we implemented the select() method and checked the functionality using
+  cp1_checker.py. We tested with multiple read/writes per connection and up to 1024
+  connections at a time.
+- After passing checkpoint 1, we moved on to implementing a successful POST response, simply
+  hardcoding the values of the field at first. We tested using both curl commands on the docker
+  image and POSTMAN.
+- In developing, we used a combination of logging and stdout printing to debug certain
+  functions and tasks for our server.
+- We next implemented HEAD, and then GET adding dynamic fields such as content length
+  and last-modified. These were all tested using POSTMAN.
+- When the basic requests seemed to work in POSTMAN, we started testing error cases:
+    - Incorrect end-point
+    - Wrong HTTP version
+    - large file to return
+    - return a picture
+- Each of the above cases was matched with either an Error Response or an appropriately executed
+  HTTP Response.
+- Once everything seemed to work through POSTMAN, we began using the testing script (grader1cp2.py)
+  for even further testing.
+    - This forced us to implement functionality for taking in command-line arguments as inputs and
+      building paths to log files and other things dynamically.
